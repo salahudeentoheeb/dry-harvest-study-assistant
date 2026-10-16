@@ -20,7 +20,6 @@ type ElevenLabsCallEvent = Event & {
 
 export function VoiceControl() {
   const { currentPage, goToPage } = useStudy();
-  const wrapperRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLElement>(null);
   const lastNavRef = useRef<{ page: number; at: number }>({ page: 0, at: 0 });
   const [scriptReady, setScriptReady] = useState(
@@ -51,51 +50,19 @@ export function VoiceControl() {
   // (its own doing, not ours) whose invisible overflow otherwise blocks
   // clicks on whatever's underneath it elsewhere on the page. While
   // collapsed, its wrapper is `display: none`, which already fully hides
-  // and disables a `position: fixed` descendant per the CSS spec — no
-  // clip-path needed there. While expanded, we only need to protect our
-  // own chat input underneath it — everything else the widget wants to
-  // render (its normal card, but also e.g. a first-run terms-of-service
-  // prompt, which can be taller/wider than the card and isn't necessarily
-  // confined to wherever the card itself sits) should stay fully visible
-  // and clickable. So instead of clipping DOWN TO a region sized for the
-  // card (which cut off a taller dialog's Accept button — the bug this
-  // replaces), clip the full viewport with a hole cut out for just the
-  // chat form's rectangle, via an evenodd `path()` (an `inset()` can only
-  // express a single rectangle, not a full box with a hole in it).
+  // and disables a `position: fixed` descendant per the CSS spec, so this
+  // only matters while expanded. `pointer-events: none` on the host lets
+  // clicks fall through to our own UI everywhere; the widget's own visible
+  // card sets `pointer-events: auto` on itself internally (shipped as a
+  // `pointer-events-auto` class in its shadow DOM), so it stays clickable
+  // wherever it renders. (A clip-path hole sized to just our chat form was
+  // tried first, but the widget's default bottom-right anchor lands inside
+  // that same corner at common viewport widths, which hid the widget
+  // entirely — clip-path removes painting, not just hit-testing.)
   useEffect(() => {
-    if (collapsed) return;
-    const wrapperEl = wrapperRef.current;
-    const widgetEl = widgetRef.current;
-    if (!widgetEl) return;
-
-    const panelEl = wrapperEl?.closest<HTMLElement>("[data-study-panel]");
-    const formEl = panelEl?.querySelector<HTMLElement>("[data-chat-form]");
-    if (!formEl) return;
-
-    function updateClip() {
-      if (!widgetEl || !formEl) return;
-      const formRect = formEl.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const holeTop = Math.max(0, formRect.top - 10);
-      const holeBottom = Math.min(vh, formRect.bottom + 10);
-      const holeLeft = Math.max(0, formRect.left - 10);
-      const holeRight = Math.min(vw, formRect.right + 10);
-      const outer = `M0 0 H${vw} V${vh} H0 Z`;
-      const hole = `M${holeLeft} ${holeTop} H${holeRight} V${holeBottom} H${holeLeft} Z`;
-      widgetEl.style.clipPath = `path(evenodd, "${outer} ${hole}")`;
-    }
-
-    updateClip();
-    window.addEventListener("resize", updateClip);
-    const resizeObserver = new ResizeObserver(updateClip);
-    if (panelEl) resizeObserver.observe(panelEl);
-    resizeObserver.observe(formEl);
-    return () => {
-      window.removeEventListener("resize", updateClip);
-      resizeObserver.disconnect();
-    };
-  }, [collapsed, scriptReady]);
+    const el = widgetRef.current;
+    if (el) el.style.pointerEvents = "none";
+  }, [scriptReady]);
 
   useEffect(() => {
     const el = widgetRef.current;
@@ -143,7 +110,7 @@ export function VoiceControl() {
   }
 
   return (
-    <div ref={wrapperRef} className="voice-widget rounded-xl border bg-card p-2 shadow-sm">
+    <div className="voice-widget rounded-xl border bg-card p-2 shadow-sm">
       <Button
         type="button"
         variant="ghost"
